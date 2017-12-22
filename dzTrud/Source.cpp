@@ -7,19 +7,61 @@
 
 using namespace std;
 
-#define DELTA 0.01
+#define DELTA 1e-6
 #define TIME_START 0.
-#define TIME_END 10
+#define TIME_END 5e-6
 #define EPS 1e-6
+#define EPSILON2
+#define EPSILON1
 
 #define N 13
+
+#define L 1e-3
+#define C1 1e-6
+#define C2 1e-4
+#define Rb 20
+#define Ru 1e6
+#define Cb 2e-12
+#define It 1e-12
+#define M_Phit 0.026
+
+
+
+void printVector(double *A, int size)
+{
+	for (int j = 0; j < size; j++)
+	{
+		printf("% .3e\n", A[j]);
+	}
+	puts("");
+}
+
+void printMatrix(double **A, int size)
+{
+	for (int i = 0; i < size; i++)
+	{
+		for (int j = 0; j < size; j++)
+		{
+			printf("% .3e\t", A[i][j]);
+		}
+		putchar('\n');
+	}
+	puts("");
+}
+
+
+
+
+
+
+
 
 class Matrix {
 private:
 	double** matrix;
 
 	double countExpDif(double phiA, double phiK) {
-		return 1e-12 / 0.026 * exp((phiA - phiK) / 0.026);
+		return It / M_Phit * exp((phiA - phiK) / M_Phit);
 	}
 public:
 	Matrix() {
@@ -45,51 +87,51 @@ public:
 			}
 		}
 
-		// Инициализация производных переменных состояния
+		// U', I'
 		for (int i = 0; i < 4; i++) {
-			matrix[i][i] = 1;
+			matrix[i][i] = 1.;
 			matrix[i][i + 4] = -1. / DELTA;
 		}
 
-		// Инициализация диагональных значений напряжений ёмкости
+		// U diagonal
 		for (int i = 4; i < 7; i++) {
 			matrix[i][i] = 1.;
 		}
 
-		// Инициализация недиагональных значений напряжений ёмкости
+		// U non-diag
 		matrix[4][9] = -1.;
 		matrix[5][11] = -1.;
 		matrix[6][10] = -1.;
 		matrix[6][11] = 1.;
 
-		// Инициализация недиагональных значений токов индуктивности
-		matrix[7][3] = 1e-3;
+		// I non-diag
+		matrix[7][3] = L;
 		matrix[7][8] = -1.;
 
-		// Инициализация токов в узлах
+		// Nodes
 		// phi1
 		matrix[8][7] = -1.;
 		matrix[8][12] = -1.;
 
 		// phi2
-		matrix[9][0] = 1e-3;
-		matrix[9][9] = 1. / 20.;
-		matrix[9][10] = -1. / 20.;
+		matrix[9][0] = C1;
+		matrix[9][9] = 1. / Rb;
+		matrix[9][10] = -1. / Rb;
 		matrix[9][12] = 1.;
 
 		// phi3
-		matrix[10][2] = 2e-12;
-		matrix[10][9] = -1. / 20.;
-		matrix[10][10] = 1. / 20. + countExpDif(phi3, phi4) + 1. / 1e6;
-		matrix[10][11] = -countExpDif(phi3, phi4) - 1. / 1e6;
+		matrix[10][2] = Cb;
+		matrix[10][9] = -1. / Rb;
+		matrix[10][10] = 1. / Rb + countExpDif(phi3, phi4) + 1. / Ru;
+		matrix[10][11] = -countExpDif(phi3, phi4) - 1. / Ru;
 
 		// phi4
-		matrix[11][1] = 1e-3;
-		matrix[11][2] = -2e-12;
-		matrix[11][10] = -countExpDif(phi3, phi4) - 1. / 1e6;
-		matrix[11][11] = countExpDif(phi3, phi4) + 1. / 1e6;
+		matrix[11][1] = C2;
+		matrix[11][2] = -Cb;
+		matrix[11][10] = -countExpDif(phi3, phi4) - 1. / Ru;
+		matrix[11][11] = countExpDif(phi3, phi4) + 1. / Ru;
 
-		// Инициализация тока на источнике типа E
+		// E
 		matrix[12][8] = -1.;
 		matrix[12][9] = 1.;
 	}
@@ -104,39 +146,39 @@ private:
 	double* vector;
 
 	double countExp(double phiA, double phiK) {
-		return 1e-12 * (exp((phiA - phiK) / 0.026) - 1.);
+		return It * (exp((phiA - phiK) / M_Phit) - 1.);
 	}
 public:
 	VectorB() {
 		vector = new double[N];
-		
+
 		for (int i = 0; i < N; i++) {
 			vector[i] = 0.;
 		}
 	}
 
 	void setVectorB(double* vectorY, double* vectorPrev, double t) {
-		// Производные переменных состояния
+		// U', I'
 		for (int i = 0; i < 4; i++) {
 			vector[i] = vectorY[i] - (vectorY[i + 4] - vectorPrev[i]) / DELTA;
 		}
-		
-		// Переменные состояния
+
+		// U, I
 		vector[4] = vectorY[4] - vectorY[9];
 		vector[5] = vectorY[5] - vectorY[11];
 		vector[6] = vectorY[6] - (vectorY[10] - vectorY[11]);
-		vector[7] = 1e-3 * vectorY[3] - vectorY[8];
+		vector[7] = L * vectorY[3] - vectorY[8];
 
-		// Узлы
+		// Phi
 		vector[8] = -vectorY[7] - vectorY[12];
-		vector[9] = vectorY[12] + 1e-3 * vectorY[0] + (vectorY[9] - vectorY[10]) / 20.;
-		vector[10] = -(vectorY[9] - vectorY[10]) / 20. + countExp(vectorY[10], vectorY[11]) + 2e-12 * vectorY[2] + 
-			(vectorY[10] - vectorY[11]) / 1e6;
-		vector[11] = -countExp(vectorY[10], vectorY[11]) - 2e-12 * vectorY[2] - (vectorY[10] - vectorY[11]) / 1e6 +
-			1e-3 * vectorY[1];
+		vector[9] = vectorY[12] + C1 * vectorY[0] + (vectorY[9] - vectorY[10]) / Rb;
+		vector[10] = -(vectorY[9] - vectorY[10]) / Rb + countExp(vectorY[10], vectorY[11]) + Cb * vectorY[2] +
+			(vectorY[10] - vectorY[11]) / Ru;
+		vector[11] = -countExp(vectorY[10], vectorY[11]) - Cb * vectorY[2] - (vectorY[10] - vectorY[11]) / Ru +
+			C2 * vectorY[1];
 
-		// Источник типа E
-		vector[12] = vectorY[9] - vectorY[8] - sin(2 * M_PI * t);
+		// E
+		vector[12] = vectorY[9] - vectorY[8] - 10. * sin(2 * M_PI / 1e4 * t);
 	}
 
 	double* getVectorB() {
@@ -215,62 +257,90 @@ public:
 	}
 };
 
-double* gauss(double **matrA, double *vecB) {
-	int i, j, row;
-	double k;
-	double* u = new double[N];
+class Gauss {
+private:
+	double **a, *y;
+	void copy(double **A, double *Y) {
+		for (int i = 0; i < N; i++) {
+			y[i] = Y[i];
+			for (int j = 0; j < N; j++)
+				a[i][j] = A[i][j];
+		}
+	}
+public:
+	Gauss() {
+		a = new double*[N];
+		y = new double[N];
+		for (int i = 0; i < N; i++)
+			a[i] = new double[N];
+	}
 
-	for (row = 1; row < N; row++)
-	{
-		for (i = row; i < N; i++) {
-			k = matrA[i][row - 1] / matrA[row - 1][row - 1];
-			for (j = 0; j < N; j++) {
-				matrA[i][j] -= k * matrA[row - 1][j];
+	double *solve(double **A, double *Y) {
+		copy(A, Y);
+		double *x, max;
+		int k, index;
+		x = new double[N];
+		k = 0;
+		while (k < N) {
+			max = abs(a[k][k]);
+			index = k;
+			for (int i = k + 1; i < N; i++) {
+				if (abs(a[i][k]) > max) {
+					max = abs(a[i][k]);
+					index = i;
+				}
 			}
-			vecB[i] -= k * vecB[row - 1];
+			for (int j = 0; j < N; j++) {
+				double temp = a[k][j];
+				a[k][j] = a[index][j];
+				a[index][j] = temp;
+			}
+			double temp = y[k];
+			y[k] = y[index];
+			y[index] = temp;
+			for (int i = k; i < N; i++) {
+				double temp = a[i][k];
+				if (abs(temp) < EPS) continue;
+				for (int j = 0; j < N; j++)
+					a[i][j] = a[i][j] / temp;
+				y[i] = y[i] / temp;
+				if (i == k)  continue;
+				for (int j = 0; j < N; j++)
+					a[i][j] = a[i][j] - a[k][j];
+				y[i] = y[i] - y[k];
+			}
+			k++;
 		}
-	}
-
-	for (row = 0; row < N; row++) {
-		k = matrA[row][row];
-		for (j = row; j < N; j++) {
-			matrA[row][j] /= k;
+		for (k = N - 1; k >= 0; k--) {
+			x[k] = y[k];
+			for (int i = 0; i < k; i++)
+				y[i] = y[i] - a[i][k] * x[k];
 		}
-		vecB[row] /= k;
+		return x;
 	}
-
-	for (row = N - 1; row > -1; row--)
-	{
-		for (i = N - 1; i > row; i--) {
-			vecB[row] -= matrA[row][i] * u[i];
-		}
-		u[row] = vecB[row];
-	}
-	return u;
-}
+};
 
 int main() {
-	Matrix matrixA = Matrix();
-	VectorB vectorB = VectorB();
-	VectorY vectorY = VectorY();
-	VectorY deltaVectorY = VectorY();
-	VectorPrev prev = VectorPrev();
+	Matrix matrixA;
+	VectorB vectorB;
+	VectorY vectorY;
+	VectorY deltaVectorY;
+	VectorPrev prev;
+	Gauss gauss;
 
-	// Инициализация НУ
 	double t = TIME_START;
 	prev.setVectorPrev(0, 0, 0, 0);
 	ofstream fout("output.csv");
 	fout << "t; U;" << endl;
 
-	// Основной цикл
 	while (t < TIME_END) {
-		vectorY.setZero();
 		do {
 			deltaVectorY.setZero();
 			vectorB.setVectorB(vectorY.getVectorY(), prev.getVectorPrev(), t);
 			vectorB.invertVectorB();
 			matrixA.setMatrix(vectorY.getVectorY());
-			deltaVectorY.setVectorY(gauss(matrixA.getMatrix(), vectorB.getVectorB()));
+			deltaVectorY.setVectorY(gauss.solve(matrixA.getMatrix(), vectorB.getVectorB()));
+			printMatrix(matrixA.getMatrix(), N);
 			vectorY.changeVectorY(deltaVectorY.getVectorY());
 		} while (!deltaVectorY.compareToZero());
 		double* y = vectorY.getVectorY();
@@ -280,4 +350,5 @@ int main() {
 	}
 
 	fout.close();
+	getchar();
 }
